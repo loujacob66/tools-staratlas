@@ -1,6 +1,8 @@
+.DS_Store
 node_modules/
 logs/
 *.log
 .env
 healthy-endpoints.json5
+testlog.txt
 
