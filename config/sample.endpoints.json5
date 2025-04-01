@@ -1,0 +1,15 @@
+// sample.endpoints.json5
+// This file defines a list of Solana RPC endpoints to monitor.
+// Use real QuikNode, Helius, or other provider URLs here.
+[
+  {
+    url: "https://your-rpc-provider-1/KEY1"
+  },
+  {
+    url: "https://your-rpc-provider-2/KEY2"
+  },
+  {
+    url: "https://your-rpc-provider-3/KEY3"
+  }
+]
+
