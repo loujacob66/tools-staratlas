@@ -1,0 +1,81 @@
+#!/usr/bin/env node
+
+require("dotenv").config({ path: require("path").resolve(__dirname, "../.env") });
+
+const minimist = require("minimist");
+const path = require("path");
+const { logError, log, initLogger, setSilent } = require("../lib/logger");
+
+(async () => {
+  const args = minimist(process.argv.slice(2));
+  const configDir = args["config-dir"] ? path.resolve(args["config-dir"]) : process.cwd();
+  const configFile = args._.find(arg => arg && !["status", "adapt", "check", "launch", "help"].includes(arg));
+  const subcommand = args._.find(arg => ["status", "adapt", "check", "launch"].includes(arg));
+
+  const dryRun = !!args["dry-run"];
+  const adapt = !!args["adapt-configs"];
+  const launch = !!args["launch"];
+  const all = !!args["all"];
+  const runCheck = !!args["check-endpoints"];
+  const runStatus = !!args["status"];
+  const pushover = !!args["pushover"];
+  const showHelp = !!args["help"] || args._.includes("help");
+  const logFile = args["log-file"];
+  const silent = !!args["silent"];
+
+  initLogger(logFile);
+  setSilent(silent);
+
+  if (showHelp) {
+    console.log(`
+Usage: launch [subcommand] [configFile] [options]
+
+Subcommands:
+  status              Show healthy endpoints and in-use jobs
+  check               Run endpoint health check
+  adapt               Patch config(s) with healthy endpoints
+  launch              Launch PM2 job(s)
+
+Options:
+  --config-dir <path>     Directory containing config files (default: cwd)
+  --all                   Apply operation to all *.config.js files in config-dir
+  --dry-run               Show actions without modifying or launching anything
+  --pushover              Send summary/status via Pushover
+  --log-file <file>       Save log output to file
+  --silent                Suppress console output
+  --help                  Show this help message
+
+Examples:
+  launch status
+  launch adapt my.config.js --dry-run
+  launch launch scan.config.js
+  launch check --pushover
+`);
+    process.exit(0);
+  }
+
+  // 🎯 Dispatch by subcommand if present
+  if (subcommand === "check" || runCheck) {
+    const checkEndpoints = require("../commands/checkEndpoints");
+    await checkEndpoints(configDir, { pushover });
+  }
+
+  if (subcommand === "status" || runStatus) {
+    const showStatus = require("../commands/showStatus");
+    await showStatus(configDir, { pushover });
+  }
+
+  if (subcommand === "adapt" || adapt) {
+    const adaptCommand = require("../commands/adapt");
+    await adaptCommand(configDir, { configFile, all, dryRun, pushover });
+  }
+
+  if (subcommand === "launch" || launch) {
+    const launchCommand = require("../commands/launchJobs");
+    await launchCommand(configDir, configFile, { dryRun });
+  }
+
+  if (!subcommand && !adapt && !launch && !runCheck && !runStatus) {
+    logError("❌ No operation specified. Use a subcommand or flags.");
+  }
+})();

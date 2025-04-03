@@ -1,10 +1,13 @@
 {
   "name": "tools-staratlas",
   "version": "0.1.1",
-  "description": "CLI tools for managing Star Atlas PM2 jobs, endpoints, and configs.",
+  "description": "CLI tools for managing Star Atlas PM2 jobs, RPC endpoints, and config automation.",
   "main": "bin/launch.js",
+  "bin": {
+    "launch": "./bin/launch"
+  },
   "scripts": {
-    "launch": "node ./bin/launch.js",
+    "launch": "node ./bin/launch",
     "check": "node ./bin/check-endpoints.js",
     "rotate": "node ./bin/rotate-endpoints.js",
     "verify": "node tools/verify-canvas-sync.js"
@@ -13,17 +16,17 @@
     "cli",
     "staratlas",
     "pm2",
+    "solana",
     "tools",
-    "endpoints",
-    "solana"
+    "endpoints"
   ],
-  "author": "",
+  "author": "Your Name",
   "license": "MIT",
   "dependencies": {
     "date-fns": "^3.6.0",
     "dotenv": "^16.4.7",
     "json5": "^2.2.3",
     "minimist": "^1.2.8",
-    "node-fetch": "^2.6.12"
+    "node-fetch": "^2.7.0"
   }
 }
