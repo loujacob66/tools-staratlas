@@ -1,9 +1,27 @@
 #!/usr/bin/env node
 
 const path = require("path");
+const fs = require("fs");
 const minimist = require("minimist");
 const { initLogger, setSilent } = require("../lib/logger");
 const { findConfigFile } = require("../lib/fileUtils");
+
+// Load .env from the project root explicitly
+const dotenvPath = path.resolve(__dirname, "../.env");
+if (fs.existsSync(dotenvPath)) {
+  require("dotenv").config({ path: dotenvPath });
+} else {
+  console.error(`❌ .env file not found at ${dotenvPath}`);
+  process.exit(1);
+}
+
+// Require critical environment variables (add more as needed)
+const REQUIRED_ENV_VARS = ["PUSHOVER_USER", "PUSHOVER_TOKEN"];
+const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
+if (missing.length > 0) {
+  console.error(`❌ Missing required env variables: ${missing.join(", ")}`);
+  process.exit(1);
+}
 
 // Load subcommands
 const check = require("../commands/checkEndpoints");
@@ -32,10 +50,10 @@ const start = require("../commands/start");
 Usage: launch <command> [args] [options]
 
 Commands:
+  start <file>          Start job(s) from a PM2 config file
   status                Show healthy endpoints and PM2 usage
   check                 Run endpoint health check and write healthy list
   adapt <file|--all>    Rewrite config(s) with healthy endpoints + cwd
-  start <file>          Start job(s) from a PM2 config file
   help                  Show this message
 
 Options:
@@ -63,7 +81,7 @@ Options:
     } else if (command === "start") {
       await start(restArgs, options);
     } else {
-      console.error(`Unknown command: ${command}`);
+      console.error(`❌ Unknown command: ${command}`);
       showHelp();
       process.exit(1);
     }
