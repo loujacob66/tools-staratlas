@@ -1,92 +1,33 @@
 #!/usr/bin/env node
 
 const path = require("path");
-const fs = require("fs");
 const minimist = require("minimist");
-const { initLogger, setSilent } = require("../lib/logger");
-const { findConfigFile } = require("../lib/fileUtils");
 
-// Load .env from the project root explicitly
-const dotenvPath = path.resolve(__dirname, "../.env");
-if (fs.existsSync(dotenvPath)) {
-  require("dotenv").config({ path: dotenvPath });
-} else {
-  console.error(`❌ .env file not found at ${dotenvPath}`);
-  process.exit(1);
-}
+const commands = {
+  start: require("../commands/start"),
+  rotate: require("../commands/rotate"),
+  check: require("../commands/checkEndpoints"),
+  status: require("../commands/showStatus"),
+};
 
-// Require critical environment variables (add more as needed)
-const REQUIRED_ENV_VARS = ["PUSHOVER_USER", "PUSHOVER_TOKEN"];
-const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
-if (missing.length > 0) {
-  console.error(`❌ Missing required env variables: ${missing.join(", ")}`);
-  process.exit(1);
-}
+async function main() {
+  const args = process.argv.slice(2);
+  const [commandName, ...restArgs] = args;
+  const flags = minimist(restArgs);
 
-// Load subcommands
-const check = require("../commands/checkEndpoints");
-const status = require("../commands/showStatus");
-const adapt = require("../commands/adapt");
-const start = require("../commands/start");
-
-(async () => {
-  const args = minimist(process.argv.slice(2));
-  const [command, ...restArgs] = args._;
-
-  const options = {
-    configDir: args["config-dir"],
-    dryRun: !!args["dry-run"] || !!args.dry_run,
-    silent: !!args["silent"],
-    all: !!args["all"],
-    pushover: !!args["pushover"],
-    only: args["only"],
-  };
-
-  initLogger(args["log-file"]);
-  setSilent(options.silent);
-
-  const showHelp = () => {
-    console.log(`
-Usage: launch <command> [args] [options]
-
-Commands:
-  start <file>          Start job(s) from a PM2 config file
-  status                Show healthy endpoints and PM2 usage
-  check                 Run endpoint health check and write healthy list
-  adapt <file|--all>    Rewrite config(s) with healthy endpoints + cwd
-  help                  Show this message
-
-Options:
-  --config-dir <path>   Directory to load configs from
-  --dry-run             Simulate actions without making changes
-  --only <job>          Restrict to specific job(s) (use with start)
-  --all                 Apply to all *.config.js files (for adapt)
-  --pushover            Send summary via Pushover
-  --silent              Suppress console output
-`);
-  };
-
-  if (!command || command === "help") {
-    showHelp();
-    return;
+  const command = commands[commandName];
+  if (!command) {
+    console.error(`[fatal] Unknown command: ${commandName}`);
+    process.exit(1);
   }
 
   try {
-    if (command === "check") {
-      await check(options);
-    } else if (command === "status") {
-      await status(options);
-    } else if (command === "adapt") {
-      await adapt(restArgs, options);
-    } else if (command === "start") {
-      await start(restArgs, options);
-    } else {
-      console.error(`❌ Unknown command: ${command}`);
-      showHelp();
-      process.exit(1);
-    }
+    await command(restArgs, flags);
   } catch (err) {
-    console.error(`[fatal] Unexpected error:\n`, err);
+    console.error("[fatal] Unexpected error:");
+    console.error(err.stack || err.message || err);
     process.exit(1);
   }
-})();
+}
+
+main();

@@ -1,56 +1,61 @@
-// commands/start.js
-const { logInfo, logError } = require("../lib/logger");
-const { execSync } = require("child_process");
 const path = require("path");
-const fs = require("fs");
+const pm2 = require("pm2");
+const { findConfigFile } = require("../lib/fileUtils");
+const { loadConfigFiles } = require("../lib/rotationUtils");
+const { log, logSection } = require("../lib/logger-enhanced");
 
-async function start(args, options) {
-  const [configFile] = args;
+function normalizeKeys(obj) {
+  const out = {};
+  for (const key of Object.keys(obj)) {
+    const camelKey = key.replace(/-([a-z])/g, (_, char) => char.toUpperCase());
+    out[camelKey] = obj[key];
+  }
+  return out;
+}
+
+module.exports = async function start(_args, rawOptions = {}) {
+  const options = normalizeKeys(rawOptions);
   const only = options.only;
-  const dryRun = options.dryRun;
+  const dryRun = options.dryRun === true || options.dryRun === "true";
+  const configDir = options.configDir || path.resolve(process.env.HOME, "pm2-configs");
 
-  if (!configFile) {
-    logError("❌ Please specify a config file to start.");
-    return;
-  }
+  logSection("Job Starter");
 
-  const configPath = require("../lib/fileUtils").findConfigFile(configFile, options.configDir);
-  if (!fs.existsSync(configPath)) {
-    logError(`❌ Config file not found: ${configPath}`);
-    return;
-  }
+  const configFiles = loadConfigFiles(configDir);
+  const found = [];
 
-  const config = require(configPath);
-  if (!Array.isArray(config.apps)) {
-    logError(`❌ Invalid or empty config: ${configPath}`);
-    return;
-  }
-
-  let jobNames = config.apps.map(app => app.name);
-
-  if (only) {
-    const onlySet = new Set(Array.isArray(only) ? only : [only]);
-    jobNames = jobNames.filter(name => onlySet.has(name));
-  }
-
-  if (jobNames.length === 0) {
-    logError("❌ No matching job(s) found to start.");
-    return;
-  }
-
-  logInfo("🚀 Starting jobs...");
-
-  for (const name of jobNames) {
-    const cmd = `pm2 start "${configPath}" --only "${name}"`;
-    if (dryRun) {
-      logInfo(`[dry-run] Would run: ${cmd}`, { noTimestamp: true });
-    } else {
-      logInfo(`Running: ${cmd}`);
-      execSync(cmd, { stdio: "inherit" });
+  for (const { config, file } of configFiles) {
+    for (const app of config.apps) {
+      if (!only || app.name === only) {
+        found.push({ name: app.name, file });
+      }
     }
   }
 
-  logInfo(`\n${dryRun ? "✨ Dry run complete." : `✅ Started ${jobNames.length} job(s).`}`);
-}
+  if (only && found.length === 0) {
+    log(`⛔ Job '${only}' not found in any config file`);
+    return;
+  }
 
-module.exports = start;
+  for (const { name, file } of found) {
+    log(`➡️ Starting job '${name}' from ${path.basename(file)}...`);
+
+    if (dryRun) {
+      log(`   ⏱️ (dry run — no start performed)`);
+      continue;
+    }
+
+    await new Promise((resolve, reject) => {
+      pm2.connect(err => {
+        if (err) return reject(err);
+        pm2.start(file, { only: name }, err => {
+          pm2.disconnect();
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+    });
+
+    log(`✅ Started job '${name}' from ${path.basename(file)}`);
+  }
+};
