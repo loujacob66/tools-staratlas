@@ -10,6 +10,7 @@ const {
   assignNewReadEndpoints,
 } = require("../lib/rotationUtils");
 const { findConfigFile } = require("../lib/fileUtils");
+const { sendPushoverAlert } = require("../lib/notify");
 const { log, logSection } = require("../lib/logger-enhanced");
 
 function stopAndRestartJob(jobName, configPath) {
@@ -59,6 +60,7 @@ module.exports = async function rotate(_args, rawOptions = {}) {
   const force = toBool(options.force);
   const requireHealthy = toBool(options.requireHealthy);
   const scramble = toBool(options.scramble);
+  const pushover = toBool(options.pushover);
   const only = options.only || null;
   const seed = Number(options.seed || 0);
   const configDir = options.configDir;
@@ -147,4 +149,8 @@ module.exports = async function rotate(_args, rawOptions = {}) {
   }
 
   log(`✅ Rotation complete (${dryRun ? "simulated" : "live"})`);
+
+  if (!dryRun && pushover) {
+    await sendPushoverAlert("✅ Endpoint rotation completed successfully.");
+  }
 };

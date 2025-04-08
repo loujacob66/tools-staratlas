@@ -6,7 +6,18 @@ const { getPm2JobEnvMap } = require("../lib/pm2-utils");
 const { sendPushoverAlert } = require("../lib/notify");
 const { findConfigFile } = require("../lib/fileUtils");
 
+function normalizeArgs(args = []) {
+  const out = {};
+  for (const arg of args) {
+    if (arg === "--pushover") out.pushover = true;
+  }
+  return out;
+}
+
 async function showStatus(options = {}) {
+  if (Array.isArray(options)) options = normalizeArgs(options);
+
+  console.log("[status] options:", options);
   const { configDir, pushover } = options;
 
   logSection("Endpoint Usage Overview");
@@ -16,7 +27,7 @@ async function showStatus(options = {}) {
   if (!fs.existsSync(filePath)) {
     logError(`healthy-endpoints.json5 not found in ${filePath}`);
     if (pushover) {
-      sendPushoverAlert("🚨 healthy-endpoints.json5 not found.");
+      await sendPushoverAlert("🚨 healthy-endpoints.json5 not found.");
     }
     process.exit(1);
   }

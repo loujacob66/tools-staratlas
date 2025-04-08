@@ -3,7 +3,6 @@ node_modules/
 logs/
 *.log
 .env
-config/endpoints.json5
-healthy-endpoints.json5
+*.json5
 testlog.txt
-
+*.tar
