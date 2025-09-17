@@ -7,9 +7,10 @@ CLI tools for managing Star Atlas automation using PM2, rotating and validating 
 ## 🚀 Features
 - Launch PM2 jobs with per-job endpoint overrides
 - Rotate or adapt PM2 config files for new endpoint assignments
-- Health-check all endpoints in `endpoints.json5`
-- Snapshot-based verification of core logic
+- Health-check all endpoints from environment configuration
+- Environment-based endpoint configuration for security and flexibility
 - Support for dry-run, filtered launch, and logging
+- Pushover notifications for endpoint health and job status
 
 ---
 
@@ -18,6 +19,8 @@ CLI tools for managing Star Atlas automation using PM2, rotating and validating 
 git clone https://github.com/YOUR-USERNAME/tools-staratlas.git
 cd tools-staratlas
 npm install
+cp .env.sample .env
+# Edit .env file with your endpoint and notification settings
 ```
 
 ---
@@ -25,44 +28,65 @@ npm install
 ## 📁 Directory Structure
 ```
 .
-├── bin/                   # CLI entry points (launch, check-endpoints)
-├── config/                # Configuration files (endpoints.json5, etc.)
+├── bin/                   # CLI entry points (launch)
+├── commands/              # Command implementations
 ├── lib/                   # Core utility modules
+├── config/                # Legacy configuration files
 ├── .snapshots/            # Canvas sync verification snapshots
 ├── tools/                 # Internal dev tools (verify script)
+├── .env                   # Environment configuration (endpoints, keys)
 └── sample.config.js       # Example PM2 job config
 ```
 
 ---
 
+## 🔐 Configuration
+
+### Environment Variables (`.env`)
+
+Create a `.env` file from `.env.sample` and configure:
+
+```bash
+# Pushover Notifications (optional)
+PUSHOVER_USER=your_pushover_user_key
+PUSHOVER_TOKEN=your_pushover_app_token
+
+# Solana Write Endpoint (single endpoint for write operations)
+SOLANA_WRITE_ENDPOINT=https://your-write-endpoint-url
+
+# Solana Read Endpoints (comma-separated name:url pairs)
+SOLANA_READ_ENDPOINTS=Endpoint 1:https://url1,Endpoint 2:https://url2,Endpoint 3:https://url3
+```
+
+**Note:** The application now uses environment variables instead of JSON configuration files for endpoint management. This provides better security and easier deployment.
+
+---
+
 ## 🛠 Commands
 
-### `check-endpoints.js`
-Checks health of all Solana RPC endpoints in `config/endpoints.json5`.
+### `launch status`
+Shows endpoint usage overview and identifies any jobs using invalid endpoints.
 
 ```bash
-node bin/check-endpoints.js [--verbose] [--log-file=FILE]
+node bin/launch status [--pushover]
 ```
 
 **Flags:**
-- `--verbose` — Show full error messages
-- `--log-file=FILE` — Save output to a file
+- `--pushover` — Send status report via Pushover notification
 
-➡️ Output is written to `healthy-endpoints.json5`
-
-### `launch.js`
-Launches jobs from a PM2 config file, with optional config adjustments.
+### `launch check`
+Health-checks all configured endpoints from environment variables.
 
 ```bash
-node bin/launch.js [--adapt-configs] [--launch] [--dry-run] [--only=job1,job2] [--log-file=FILE] my.config.js
+node bin/launch check [--pushover]
 ```
 
 **Flags:**
-- `--adapt-configs` — Adjust config files before launching
-- `--launch` — Run `pm2 start` on each job
-- `--dry-run` — Show what would happen without taking action
-- `--only=job1,job2` — Filter jobs by name
-- `--log-file=FILE` — Output logs to a file
+- `--pushover` — Send health report via Pushover notification
+
+### Other Commands
+- `launch start` — Start PM2 jobs
+- `launch rotate` — Rotate endpoint assignments
 
 ---
 
@@ -79,25 +103,22 @@ npm run verify -- --save
 
 ---
 
-## 🔐 Config Files
+## 🔄 Migration from JSON Config
 
-### `config/endpoints.json5`
-```json5
-[
-  { url: "https://your-rpc-endpoint-1" },
-  { url: "https://your-rpc-endpoint-2" }
-]
-```
+If upgrading from the JSON-based configuration:
 
-### `sample.config.js`
-A fully sanitized PM2 job config. Jobs reference `SOLANA_RPC_URL_WRITE` and `SOLANA_RPC_URL_READ` via `env`.
+1. Copy your endpoints from `config/endpoints.json5` to the `.env` file
+2. Separate read and write endpoints appropriately
+3. The application maintains backward compatibility with JSON files as fallback
 
 ---
 
-## 🔔 Coming Soon
-- `--check-only` + `--pushover` alerting for endpoint failures
-- Minimum healthy threshold enforcement
-- Endpoint rotation dashboard
+## 🔔 Features
+- Environment-based endpoint configuration for improved security
+- Pushover integration for monitoring and alerts
+- PM2 job status tracking and endpoint validation
+- Health monitoring for all Solana RPC endpoints
+- Endpoint rotation and load balancing support
 
 ---
 
