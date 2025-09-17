@@ -1,7 +1,6 @@
 const path = require("path");
 const fs = require("fs");
 const pm2 = require("pm2");
-const JSON5 = require("json5");
 const os = require("os");
 
 const {
@@ -12,6 +11,7 @@ const {
 const { findConfigFile } = require("../lib/fileUtils");
 const { sendPushoverAlert } = require("../lib/notify");
 const { log, logSection } = require("../lib/logger-enhanced");
+const { getHealthyEndpoints } = require("../lib/envConfig");
 
 function stopAndRestartJob(jobName, configPath) {
   return new Promise((resolve, reject) => {
@@ -58,7 +58,6 @@ module.exports = async function rotate(_args, rawOptions = {}) {
 
   const dryRun = toBool(options.dryRun);
   const force = toBool(options.force);
-  const requireHealthy = toBool(options.requireHealthy);
   const scramble = toBool(options.scramble);
   const pushover = toBool(options.pushover);
   const only = options.only || null;
@@ -72,85 +71,85 @@ module.exports = async function rotate(_args, rawOptions = {}) {
 
   logSection("Endpoint Rotation");
 
-  const healthyPath = path.join(baseDir, "healthy-endpoints.json5");
+  try {
+    // Get healthy endpoints from environment variables instead of JSON file
+    const healthy = getHealthyEndpoints();
+    log(`📊 Using ${healthy.length} endpoints from environment configuration`);
+    
+    const configObjects = loadConfigFiles(baseDir);
+    const jobEndpoints = extractJobEndpoints(configObjects);
+    const liveEnv = getPm2LiveEnvMap();
 
-  if (!fs.existsSync(healthyPath)) {
-    const msg = `Missing: ${healthyPath}`;
-    if (requireHealthy) {
-      log(`⛔ ${msg}`);
-      process.exit(1);
-    } else {
-      log(`⚠️  ${msg} — proceeding without endpoint validation`);
-    }
-  }
+    const newAssignments = assignNewReadEndpoints(jobEndpoints, healthy, {
+      forceReassign: force,
+      scramble,
+      rotateDay: seed,
+    });
 
-  const healthy = JSON5.parse(fs.readFileSync(healthyPath, "utf8"));
-  const configObjects = loadConfigFiles(baseDir);
-  const jobEndpoints = extractJobEndpoints(configObjects);
-  const liveEnv = getPm2LiveEnvMap();
+    const jobsToUpdate = only ? [only] : Object.keys(newAssignments);
 
-  const newAssignments = assignNewReadEndpoints(jobEndpoints, healthy, {
-    forceReassign: force,
-    scramble,
-    rotateDay: seed,
-  });
+    for (const jobName of jobsToUpdate) {
+      const fromLive = (liveEnv[jobName]?.SOLANA_RPC_URL_READ || "").replace(/\/+$/, "");
+      const to = newAssignments[jobName];
+      const toNormalized = to.replace(/\/+$/, "");
 
-  const jobsToUpdate = only ? [only] : Object.keys(newAssignments);
+      const label = healthy.find(e => e.url.replace(/\/+$/, "") === toNormalized)?.name || "(unknown)";
 
-  for (const jobName of jobsToUpdate) {
-    const fromLive = (liveEnv[jobName]?.SOLANA_RPC_URL_READ || "").replace(/\/+$/, "");
-    const to = newAssignments[jobName];
-    const toNormalized = to.replace(/\/+$/, "");
-
-    const label = healthy.find(e => e.url.replace(/\/+$/, "") === toNormalized)?.name || "(unknown)";
-
-    const shouldSkip = fromLive === toNormalized && !force;
-    if (shouldSkip) {
-      log(`➡️ ${jobName} already using correct endpoint — skipping`);
-      continue;
-    }
-
-    log(`${jobName}`);
-    log(`   • from (live): ${fromLive}`);
-    log(`   • to:          ${to} (${label})`);
-
-    if (!dryRun) {
-      const configEntry = configObjects.find(({ config }) =>
-        Array.isArray(config.apps) && config.apps.some(app => app.name === jobName)
-      );
-
-      if (!configEntry) {
-        log(`⛔ Job '${jobName}' not found in configs`);
+      const shouldSkip = fromLive === toNormalized && !force;
+      if (shouldSkip) {
+        log(`➡️ ${jobName} already using correct endpoint — skipping`);
         continue;
       }
 
-      // Update env in config and write it back correctly
-      let updated = false;
-      for (const app of configEntry.config.apps) {
-        if (app.name === jobName) {
-          app.env = { ...app.env, SOLANA_RPC_URL_READ: to };
-          updated = true;
+      log(`${jobName}`);
+      log(`   • from (live): ${fromLive}`);
+      log(`   • to:          ${to} (${label})`);
+
+      if (!dryRun) {
+        const configEntry = configObjects.find(({ config }) =>
+          Array.isArray(config.apps) && config.apps.some(app => app.name === jobName)
+        );
+
+        if (!configEntry) {
+          log(`⛔ Job '${jobName}' not found in configs`);
+          continue;
         }
-      }
 
-      if (updated) {
-        const isJs = configEntry.file.endsWith(".js");
-        const contents = isJs
-          ? "module.exports = " + JSON.stringify(configEntry.config, null, 2)
-          : JSON.stringify(configEntry.config, null, 2);
-        fs.writeFileSync(configEntry.file, contents);
-      }
+        // Update env in config and write it back correctly
+        let updated = false;
+        for (const app of configEntry.config.apps) {
+          if (app.name === jobName) {
+            app.env = { ...app.env, SOLANA_RPC_URL_READ: to };
+            updated = true;
+          }
+        }
 
-      await stopAndRestartJob(jobName, configEntry.file);
-      log(`✅ Restarted ${jobName}`);
-    } else {
-      log(`   ⏱️ (dry run — no restart performed)`);
+        if (updated) {
+          const isJs = configEntry.file.endsWith(".js");
+          const contents = isJs
+            ? "module.exports = " + JSON.stringify(configEntry.config, null, 2)
+            : JSON.stringify(configEntry.config, null, 2);
+          fs.writeFileSync(configEntry.file, contents);
+        }
+
+        await stopAndRestartJob(jobName, configEntry.file);
+        log(`✅ Restarted ${jobName}`);
+      } else {
+        log(`   ⏱️ (dry run — no restart performed)`);
+      }
     }
-  }
 
-  log(`✅ Rotation complete (${dryRun ? "simulated" : "live"})`);
+    log(`✅ Rotation complete (${dryRun ? "simulated" : "live"})`);
 
-  if (!dryRun && pushover) {
-    await sendPushoverAlert("✅ Endpoint rotation completed successfully.");
+    if (!dryRun && pushover) {
+      await sendPushoverAlert(`✅ Endpoint rotation completed successfully using ${healthy.length} endpoints.`);
+    }
+  } catch (error) {
+    log(`⛔ Failed to load endpoint configuration: ${error.message}`);
+    log("Make sure SOLANA_READ_ENDPOINTS is properly set in your .env file");
+    if (pushover) {
+      await sendPushoverAlert("🚨 Endpoint rotation failed - configuration error");
+    }
+    process.exit(1);
   }
 };
